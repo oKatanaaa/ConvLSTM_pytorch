@@ -16,7 +16,7 @@ class LayerNorm(nn.Module):
 
 class ConvMGUCell(nn.Module):
     # https://arxiv.org/pdf/1603.09420.pdf
-    def __init__(self, input_dim, hidden_dim, kernel_size, bias):
+    def __init__(self, input_dim, hidden_dim, kernel_size, bias, n_groups=4):
         """
         Initialize ConvMGUCell cell.
 
@@ -57,7 +57,7 @@ class ConvMGUCell(nn.Module):
         nn.init.orthogonal_(self.gate_conv.weight, gain=nn.init.calculate_gain('tanh'))
         nn.init.constant_(self.gate_conv.bias, val=-2.0)
         self.init_hidden()
-        self.ln = nn.GroupNorm(num_groups=8, num_channels=self.hidden_dim)
+        self.gn = nn.GroupNorm(num_groups=n_groups, num_channels=self.hidden_dim)
 
     def forward(self, input_tensor, cur_state):
         # Broadcast [1, с, 1, 1] -> [b, c, h, w]
@@ -68,7 +68,7 @@ class ConvMGUCell(nn.Module):
         
         combined2 = torch.cat([input_tensor, f * h_cur], dim=1)
         h_c_pretanh = self.candidate_conv(combined2)
-        h_c_pretanh = self.ln(h_c_pretanh)
+        h_c_pretanh = self.gn(h_c_pretanh)
         h_c = F.tanh(h_c_pretanh)
         
         h_next = (1. - f) * h_cur + f * h_c
@@ -112,7 +112,7 @@ class ConvMGU(nn.Module):
     """
 
     def __init__(self, input_dim, hidden_dim, kernel_size, num_layers,
-                 batch_first=True, bias=True, return_all_layers=False):
+                 batch_first=True, bias=True, return_all_layers=False, n_groups=4):
         super(ConvMGU, self).__init__()
 
         self._check_kernel_size_consistency(kernel_size)
@@ -137,7 +137,7 @@ class ConvMGU(nn.Module):
             cell_list.append(ConvMGUCell(input_dim=cur_input_dim,
                                           hidden_dim=self.hidden_dim[i],
                                           kernel_size=self.kernel_size[i],
-                                          bias=self.bias))
+                                          bias=self.bias, n_groups=n_groups))
 
         self.cell_list = nn.ModuleList(cell_list)
 
